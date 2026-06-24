@@ -1,0 +1,24 @@
+# Build
+build/
+dist/
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+
+# Runtime (created next to exe)
+config.json
+watcher.log
+watcher_state.json
+Output/
+output/
+spool/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

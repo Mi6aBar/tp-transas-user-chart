@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Фоновый watcher: PDF из ADC Print -> Route_T&P.aiz (встраивается в GUI)."""
+"""Фоновый watcher: PDF из ADC Print -> Route_T&P user chart (встраивается в GUI)."""
 import json
 import os
 import threading
 import time
 from datetime import datetime
 
-from adc_paths import default_output_dir, find_catalogue, get_app_dir, route_aiz_path
+from adc_paths import default_output_dir, find_catalogue, get_app_dir, route_output_path
 
 WATCH_EXTENSIONS = {'.pdf'}
 DEBOUNCE_SEC = 2.0
@@ -15,11 +15,11 @@ IGNORE_NAMES = {'watcher.log', 'watcher_state.json', 'watcher.pid', 'config.json
 
 def _paths():
     base = get_app_dir()
-    out_aiz = route_aiz_path()
+    out_chart = route_output_path()
     return {
         'base': base,
         'spool': os.path.join(base, 'spool'),
-        'output_aiz': out_aiz,
+        'output_chart': out_chart,
         'state': os.path.join(base, 'watcher_state.json'),
         'log': os.path.join(base, 'watcher.log'),
     }
@@ -86,7 +86,12 @@ def should_ignore(path):
     name = os.path.basename(path).lower()
     if name in IGNORE_NAMES or name.startswith('~') or name.startswith('_'):
         return True
-    if name.endswith('.exe') or 'route_t&p.aiz' in name:
+    if name.endswith('.exe'):
+        return True
+    low = name.lower()
+    if low.startswith('route_t&p.') and low.endswith(('.aiz', '.xml', '.csv')):
+        return True
+    if low.endswith('.xml') and ('tp world' in low or 'route tp' in low):
         return True
     return False
 
@@ -142,14 +147,14 @@ class RouteWatcher:
         self._stop.clear()
         paths = _paths()
         os.makedirs(paths['spool'], exist_ok=True)
-        os.makedirs(os.path.dirname(paths['output_aiz']), exist_ok=True)
+        os.makedirs(os.path.dirname(paths['output_chart']), exist_ok=True)
         cat = find_catalogue()
         log('Route watcher starting', self.on_log)
         if cat:
             log('Catalogue: %s' % cat, self.on_log)
         else:
             log('WARNING: catalogue not configured', self.on_log)
-        log('Output: %s' % paths['output_aiz'], self.on_log)
+        log('Output: %s' % paths['output_chart'], self.on_log)
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 

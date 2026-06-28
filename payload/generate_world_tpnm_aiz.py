@@ -532,15 +532,14 @@ def write_aiz_file(records, output_path, has_danger=False, log=None):
     return len(ai_bytes)
 
 
-def build_route_aiz(export_path, catalogue_path, output_path, log=None):
-    """Маршрут: нотисы из ADC Print PDF/HTML -> .aiz."""
+def _filter_notices_from_export(export_path, catalogue_path, log=None):
+    """Parse export + catalogue; return (pub_date, filtered, wanted_norm, missing, export_path)."""
     from parse_adc_export import normalize_notice_id, parse_adc_export
 
     if log is None:
         log = print
     export_path = os.path.abspath(export_path)
     catalogue_path = os.path.abspath(catalogue_path)
-    output_path = os.path.abspath(output_path)
 
     wanted = parse_adc_export(export_path)
     if not wanted:
@@ -557,6 +556,17 @@ def build_route_aiz(export_path, catalogue_path, output_path, log=None):
     if not filtered:
         raise ValueError('Export has %d IDs but none matched catalogue' % len(wanted))
 
+    return pub_date, filtered, wanted_norm, missing, export_path
+
+
+def build_route_aiz(export_path, catalogue_path, output_path, log=None):
+    """Маршрут: нотисы из ADC Print PDF/HTML -> .aiz."""
+    if log is None:
+        log = print
+    output_path = os.path.abspath(output_path)
+    pub_date, filtered, wanted_norm, missing, export_path = _filter_notices_from_export(
+        export_path, catalogue_path, log=log)
+
     ts_bytes = datetime.now().strftime('%y-%m-%d %H:%M').encode('ascii') + b'\x00'
     records, stats, has_danger = build_records_for_notices(filtered, ts_bytes, log=log)
     write_aiz_file(records, output_path, has_danger=has_danger, log=log)
@@ -566,6 +576,7 @@ def build_route_aiz(export_path, catalogue_path, output_path, log=None):
     return {
         'export': export_path,
         'output': output_path,
+        'format': 'transas',
         'pub_date': pub_date,
         'wanted': len(wanted_norm),
         'matched': len(filtered),
@@ -574,6 +585,119 @@ def build_route_aiz(export_path, catalogue_path, output_path, log=None):
         'stats': stats,
         'danger': stats['danger'],
         'size': size,
+    }
+
+
+def build_route_chart(export_path, catalogue_path, output_path=None, chart_format=None, log=None):
+    """Маршрут: нотисы из ADC Print PDF -> user chart (Transas / Furuno / JRC)."""
+    from adc_paths import CHART_FURUNO, CHART_FURUNO_BETA2, get_chart_format, route_output_path
+    from export_tp_charts import (
+        count_export_objects,
+        furuno_profile_for_chart_format,
+        write_furuno_file,
+        write_jrc_file,
+    )
+
+    if log is None:
+        log = print
+    chart_format = chart_format or get_chart_format()
+    output_path = os.path.abspath(output_path or route_output_path(chart_format))
+
+    if chart_format == 'transas':
+        return build_route_aiz(export_path, catalogue_path, output_path, log=log)
+
+    pub_date, filtered, wanted_norm, missing, export_path = _filter_notices_from_export(
+        export_path, catalogue_path, log=log)
+    chart_name = 'Route TP'
+    if chart_format == CHART_FURUNO_BETA2:
+        chart_name = 'Route TP BETA2'
+    if chart_format == 'jrc':
+        size = write_jrc_file(
+            filtered, output_path, chart_name=chart_name,
+            chart_subtitle=pub_date or chart_name, log=log)
+        furuno_meta = {}
+    elif chart_format in (CHART_FURUNO, CHART_FURUNO_BETA2):
+        profile = furuno_profile_for_chart_format(chart_format)
+        size, furuno_meta = write_furuno_file(
+            filtered, output_path, chart_name=chart_name, log=log, profile=profile)
+    else:
+        raise ValueError('Unknown chart format: %s' % chart_format)
+
+    objects = count_export_objects(filtered)
+    log('Done: %s (%d bytes)' % (output_path, size))
+    return {
+        'export': export_path,
+        'output': output_path,
+        'format': chart_format,
+        'pub_date': pub_date,
+        'wanted': len(wanted_norm),
+        'matched': len(filtered),
+        'missing': missing,
+        'objects': objects,
+        'size': size,
+        **furuno_meta,
+    }
+
+
+def build_world_chart(input_path, output_path=None, chart_format=None, log=None):
+    """Собрать worldwide T&P user chart (Transas / Furuno / JRC)."""
+    from adc_paths import CHART_FURUNO, CHART_FURUNO_BETA2, get_chart_format, world_output_path
+    from export_tp_charts import (
+        count_export_objects,
+        furuno_profile_for_chart_format,
+        write_furuno_file,
+        write_jrc_file,
+    )
+
+    if log is None:
+        log = print
+    chart_format = chart_format or get_chart_format()
+    input_path = os.path.abspath(input_path)
+    output_path = os.path.abspath(output_path or world_output_path(chart_format))
+
+    if chart_format == 'transas':
+        return build_world_aiz(input_path, output_path, log=log)
+
+    if not os.path.isfile(input_path):
+        raise FileNotFoundError('Input not found: %s' % input_path)
+
+    log('Input : %s' % input_path)
+    log('Output: %s' % output_path)
+
+    pub_date, notices = parse_notices(load_tpnms_bytes(input_path))
+    n_areas = sum(len(n['areas']) for n in notices)
+    n_points = sum(len(n['points']) for n in notices)
+    log('Catalogue date: %s' % pub_date)
+    log('Parsed %d notices with coordinates: %d areas, %d single points.'
+        % (len(notices), n_areas, n_points))
+
+    chart_name = 'TP World'
+    if chart_format == CHART_FURUNO_BETA2:
+        chart_name = 'TP World BETA2'
+    if chart_format == 'jrc':
+        size = write_jrc_file(
+            notices, output_path, chart_name=chart_name,
+            chart_subtitle=pub_date or chart_name, log=log)
+        furuno_meta = {}
+    elif chart_format in (CHART_FURUNO, CHART_FURUNO_BETA2):
+        profile = furuno_profile_for_chart_format(chart_format)
+        size, furuno_meta = write_furuno_file(
+            notices, output_path, chart_name=chart_name, log=log, profile=profile)
+    else:
+        raise ValueError('Unknown chart format: %s' % chart_format)
+
+    objects = count_export_objects(notices)
+    log('Done: %s (%d bytes)' % (output_path, size))
+    return {
+        'output': output_path,
+        'format': chart_format,
+        'pub_date': pub_date,
+        'notices': len(notices),
+        'objects': objects,
+        'areas': n_areas,
+        'points': n_points,
+        'size': size,
+        **furuno_meta,
     }
 
 
@@ -590,15 +714,7 @@ def build_world_aiz(input_path, output_path, log=None):
     log('Input : %s' % input_path)
     log('Output: %s' % output_path)
 
-    if input_path.lower().endswith('.zip'):
-        with zipfile.ZipFile(input_path) as z:
-            name = next(n for n in z.namelist() if n.lower().endswith('.xml'))
-            xml_bytes = z.read(name)
-    else:
-        with open(input_path, 'rb') as f:
-            xml_bytes = f.read()
-
-    pub_date, notices = parse_notices(xml_bytes)
+    pub_date, notices = parse_notices(load_tpnms_bytes(input_path))
     n_areas = sum(len(n['areas']) for n in notices)
     n_points = sum(len(n['points']) for n in notices)
     log('Catalogue date: %s' % pub_date)
@@ -616,6 +732,7 @@ def build_world_aiz(input_path, output_path, log=None):
 
     return {
         'output': output_path,
+        'format': 'transas',
         'pub_date': pub_date,
         'notices': len(notices),
         'objects': len(records),

@@ -10,6 +10,33 @@ REG_PATH = r'Software\WOW6432Node\ADMIRALTY Digital Catalogue'
 CONFIG_NAME = 'config.json'
 OUTPUT_DIR_NAME = 'Output'
 
+CHART_TRANSAS = 'transas'
+CHART_FURUNO = 'furuno'
+CHART_FURUNO_BETA2 = 'furuno_beta2'
+CHART_JRC = 'jrc'
+CHART_JRC_UCH = 'jrc_uch'  # kept for legacy config mapping only
+CHART_FORMATS = (CHART_TRANSAS, CHART_FURUNO, CHART_FURUNO_BETA2, CHART_JRC)
+FORMAT_EXT = {
+    CHART_TRANSAS: '.aiz',
+    CHART_FURUNO: '.xml',
+    CHART_FURUNO_BETA2: '.xml',
+    CHART_JRC: '.csv',
+    CHART_JRC_UCH: '.uch',
+}
+
+
+def is_furuno_xml_format(fmt):
+    return fmt in (CHART_FURUNO, CHART_FURUNO_BETA2)
+
+
+def normalize_chart_format(fmt):
+    """Map legacy saved settings to supported chart format codes."""
+    if fmt in ('jrc_jan9201',):
+        return CHART_JRC
+    if fmt in ('jrc_jan701b', CHART_JRC_UCH):
+        return CHART_JRC
+    return fmt if fmt in CHART_FORMATS else CHART_TRANSAS
+
 
 def get_app_dir():
     """Папка portable-программы (рядом с .exe или T&P_Program при запуске из исходников)."""
@@ -130,12 +157,34 @@ def default_output_dir():
     return out
 
 
+def get_chart_format():
+    return normalize_chart_format(load_config().get('chart_format', CHART_TRANSAS))
+
+
+def route_output_path(chart_format=None):
+    fmt = chart_format or get_chart_format()
+    if is_furuno_xml_format(fmt):
+        return default_output_dir()
+    ext = FORMAT_EXT.get(fmt, '.aiz')
+    return os.path.join(default_output_dir(), 'Route_T&P' + ext)
+
+
+def world_output_path(chart_format=None):
+    fmt = chart_format or get_chart_format()
+    if fmt == CHART_FURUNO:
+        return os.path.join(default_output_dir(), 'TP World Furuno')
+    if fmt == CHART_FURUNO_BETA2:
+        return os.path.join(default_output_dir(), 'TP World Furuno BETA2')
+    ext = FORMAT_EXT.get(fmt, '.aiz')
+    return os.path.join(default_output_dir(), 'T&P World' + ext)
+
+
 def route_aiz_path():
-    return os.path.join(default_output_dir(), 'Route_T&P.aiz')
+    return route_output_path(CHART_TRANSAS)
 
 
 def world_aiz_path():
-    return os.path.join(default_output_dir(), 'T&P World.aiz')
+    return world_output_path(CHART_TRANSAS)
 
 
 def reveal_in_explorer(path):
@@ -166,5 +215,6 @@ def detect_defaults():
         'common_data_dir': reg_common or '',
         'catalogue_path': catalogue or '',
         'output_dir': out,
+        'chart_format': CHART_TRANSAS,
         'route_output_path': os.path.join(out, 'Route_T&P.aiz'),
     }

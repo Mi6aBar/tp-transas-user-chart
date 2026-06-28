@@ -1,8 +1,8 @@
-# T&P — TRANSAS USER CHART
+# T&P CHART MASTER
 
-Portable Windows application for building **Transas user chart** (`.aiz`) from **ADMIRALTY T&P** notices via **ADC**.
+Portable Windows application for building **ECDIS user charts** from **ADMIRALTY T&P** notices via **ADC** (Transas, Furuno, JRC).
 
-**Version:** 1.0
+**Version:** 1.1
 
 ## Authors
 
@@ -13,11 +13,19 @@ Portable Windows application for building **Transas user chart** (`.aiz`) from *
 
 ## Features
 
-- **Route** — `Route_T&P.aiz` from ADC Print PDF (auto + manual)
-- **World** — `T&P World.aiz` from full T&P catalogue
-- **Notice list** — extract notice numbers from PDF
-- **Portable** — single `TP_Transas.exe`, no Python install required
+- **Route** — chart from ADC Print PDF (auto watcher + manual)
+- **World** — worldwide chart from full T&P catalogue (`tpnms.xml` / `tpnms.zip`)
+- **Notice list** — extract T&P notice IDs from PDF
+- **ECDIS formats** — Transas `.aiz`, Furuno `.xml` (BETA / BETA2), JRC `.csv`
+- **Portable** — single `TP_Chart_Master.exe`, no Python install required
 - **Languages** — Русский / English
+
+## Furuno export modes
+
+| Mode | Use case |
+|------|----------|
+| **Furuno BETA** | Route charts aligned with ADC `Route TP` reference (areas + labels, 200 points/file) |
+| **Furuno BETA2** | Route + world: lines + areas + labels (NAVAREA-style, 200 points/file) |
 
 ## Requirements
 
@@ -27,18 +35,16 @@ Portable Windows application for building **Transas user chart** (`.aiz`) from *
 
 ## Download
 
-Ready-to-use build: **[Releases](https://github.com/Mi6aBar/tp-transas-user-chart/releases)** — download `TP_Transas.exe`.
+Ready-to-use build: **[Releases](https://github.com/Mi6aBar/tp-transas-user-chart/releases)** — download `TP_Chart_Master.exe`.
 
 ## Run
 
-1. Download `TP_Transas.exe`
+1. Download `TP_Chart_Master.exe` (place in any folder)
 2. Double-click to start
-3. **Settings** — set ADC folder, T&P catalogue, Output folder
+3. **Settings** — ADC folder, T&P catalogue, Output folder, ECDIS format
 4. Use **Route**, **World**, or **Notice list** tabs
 
 Results are saved to the **Output** folder next to the exe.
-
-Load `.aiz` in Transas MAPS: **User chart**
 
 ## Build from source
 
@@ -47,14 +53,14 @@ pip install pyinstaller pypdf watchdog pillow
 python build.py
 ```
 
-Output: `../T&P_Program/TP_Transas.exe`
+Output: `../T&P_Program_v1.1/TP_Chart_Master.exe`
 
 ## Project structure
 
 ```
 tp_app.py          — GUI application
 build.py           — PyInstaller build script
-payload/           — core modules (.aiz generation, watcher, i18n)
+payload/           — core modules (export, watcher, i18n)
 app_icon.png       — application icon source
 TP_Transas.ico     — Windows icon
 ```
@@ -66,4 +72,4 @@ TP_Transas.ico     — Windows icon
 
 ---
 
-**T&P — TRANSAS USER CHART** · Developer: [t.me/mishabar](https://t.me/mishabar) · Project: [t.me/sea_apks](https://t.me/sea_apks)
+**T&P CHART MASTER** · Developer: [t.me/mishabar](https://t.me/mishabar) · Project: [t.me/sea_apks](https://t.me/sea_apks)

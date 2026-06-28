@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-T&P Transas — portable GUI (маршрут + весь мир).
-Запуск без установки: TP_Transas.exe или python tp_app.py
+T&P CHART MASTER — portable GUI (маршрут + весь мир).
+Transas / Furuno / JRC. Запуск: TP_Chart_Master.exe или python tp_app.py
 """
 import os
 import queue
@@ -9,9 +9,10 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog, messagebox, ttk
 
-APP_VERSION = '1.0'
+APP_VERSION = '1.1'
 
 
 def _setup_import_path():
@@ -25,6 +26,8 @@ def _setup_import_path():
 _setup_import_path()
 
 from adc_paths import (  # noqa: E402
+    CHART_FORMATS,
+    CHART_TRANSAS,
     OUTPUT_DIR_NAME,
     catalogue_candidates,
     default_output_dir,
@@ -34,20 +37,25 @@ from adc_paths import (  # noqa: E402
     find_catalogue,
     get_app_dir,
     load_config,
+    normalize_chart_format,
     reveal_in_explorer,
     save_config,
-    world_aiz_path,
+    world_output_path,
 )
 from generate_from_export import generate_from_export  # noqa: E402
-from generate_world_tpnm_aiz import build_world_aiz  # noqa: E402
+from generate_world_tpnm_aiz import build_world_chart  # noqa: E402
 from extract_notice_list import extract_notice_list as build_notice_list  # noqa: E402
 from route_watcher import RouteWatcher  # noqa: E402
 from i18n import (  # noqa: E402
     LANG_EN,
-    LANG_LABELS,
     LANG_RU,
+    chart_code_to_label,
+    chart_format_labels,
+    label_to_chart_code,
     label_to_lang_code,
     lang_code_to_label,
+    language_option_labels,
+    localize_error,
     resolve_language,
     t,
 )
@@ -63,6 +71,9 @@ class TPTransasApp(tk.Tk):
         self.defaults = detect_defaults()
         self._log_queue = queue.Queue()
         self._world_worker = None
+        self._world_building = False
+        self._status_key = None
+        self._status_kwargs = {}
         self._watcher = RouteWatcher(
             on_log=lambda _msg: None,
             on_success=self._on_route_built,
@@ -77,6 +88,19 @@ class TPTransasApp(tk.Tk):
 
     def tr(self, key, **kwargs):
         return t(key, self.lang, **kwargs)
+
+    def set_status(self, key=None, **kwargs):
+        if key is None:
+            self._status_key = None
+            self._status_kwargs = {}
+            self.status.set('')
+            return
+        self._status_key = key
+        self._status_kwargs = dict(kwargs)
+        self.status.set(self.tr(key, **kwargs))
+
+    def show_error(self, message):
+        messagebox.showerror(self.tr('window_title'), localize_error(str(message), self.lang))
 
     def _set_window_icon(self):
         bases = [get_app_dir()]
@@ -162,6 +186,22 @@ class TPTransasApp(tk.Tk):
         ttk.Label(outer, textvariable=self.status, wraplength=580).grid(
             row=2, column=0, sticky='w', pady=(6, 0))
 
+        self._auth_frame = ttk.Frame(outer)
+        self._auth_frame.grid(row=3, column=0, sticky='w', pady=(8, 0))
+        self._ui['auth_by'] = ttk.Label(self._auth_frame, text='')
+        self._ui['auth_by'].pack(side='left')
+        self._ui['auth_dev'] = tk.Label(
+            self._auth_frame, text='', fg='#0066cc', cursor='hand2')
+        self._ui['auth_dev'].pack(side='left')
+        self._ui['auth_dev'].bind(
+            '<Button-1>', lambda _e: webbrowser.open('https://t.me/mishabar'))
+        ttk.Label(self._auth_frame, text='  |  ').pack(side='left')
+        self._ui['auth_channel'] = tk.Label(
+            self._auth_frame, text='', fg='#0066cc', cursor='hand2')
+        self._ui['auth_channel'].pack(side='left')
+        self._ui['auth_channel'].bind(
+            '<Button-1>', lambda _e: webbrowser.open('https://t.me/sea_apks'))
+
     def _build_settings(self, frm, pad):
         frm.columnconfigure(1, weight=1)
 
@@ -193,20 +233,32 @@ class TPTransasApp(tk.Tk):
         self._lang_combo = ttk.Combobox(
             frm,
             textvariable=self.lang_var,
-            values=[LANG_LABELS[LANG_RU], LANG_LABELS[LANG_EN]],
+            values=list(language_option_labels(self.lang).values()),
             state='readonly',
             width=14,
         )
         self._lang_combo.grid(row=4, column=1, sticky='w', **pad)
         self._lang_combo.bind('<<ComboboxSelected>>', self._on_language_changed)
 
+        self._ui['lbl_chart_format'] = ttk.Label(frm, text='')
+        self._ui['lbl_chart_format'].grid(row=5, column=0, sticky='w')
+        self.chart_format_var = tk.StringVar()
+        self._format_combo = ttk.Combobox(
+            frm,
+            textvariable=self.chart_format_var,
+            values=list(chart_format_labels(self.lang).values()),
+            state='readonly',
+            width=28,
+        )
+        self._format_combo.grid(row=5, column=1, sticky='w', **pad)
+
         save_row = ttk.Frame(frm)
-        save_row.grid(row=5, column=0, columnspan=3, pady=(12, 0))
+        save_row.grid(row=6, column=0, columnspan=3, pady=(12, 0))
         self._ui['btn_save'] = ttk.Button(save_row, text='', command=self.save_settings)
         self._ui['btn_save'].pack()
 
         self._ui['settings_hint'] = ttk.Label(frm, text='', wraplength=520, justify='left')
-        self._ui['settings_hint'].grid(row=6, column=0, columnspan=3, sticky='w', pady=(16, 0))
+        self._ui['settings_hint'].grid(row=7, column=0, columnspan=3, sticky='w', pady=(16, 0))
 
     def _build_route(self, frm, pad):
         frm.columnconfigure(0, weight=1)
@@ -261,6 +313,7 @@ class TPTransasApp(tk.Tk):
         self._ui['lbl_output'].configure(text=self.tr('lbl_output'))
         self._ui['lbl_program_dir'].configure(text=self.tr('lbl_program_dir'))
         self._ui['lbl_language'].configure(text=self.tr('lbl_language'))
+        self._ui['lbl_chart_format'].configure(text=self.tr('lbl_chart_format'))
         self._ui['btn_save'].configure(text=self.tr('btn_save_settings'))
         self._ui['settings_hint'].configure(text=self.tr(
             'settings_hint',
@@ -281,8 +334,25 @@ class TPTransasApp(tk.Tk):
         self._ui['btn_pick_file'].configure(text=self.tr('btn_pick_file'))
         self._ui['btn_open_output_list'].configure(text=self.tr('btn_open_output'))
 
+        fmt_labels = chart_format_labels(self.lang)
+        self._format_combo.configure(values=list(fmt_labels.values()))
+        cur_fmt = label_to_chart_code(self.chart_format_var.get(), self.lang)
+        self.chart_format_var.set(chart_code_to_label(cur_fmt, self.lang))
+
+        lang_opts = language_option_labels(self.lang)
+        self._lang_combo.configure(values=list(lang_opts.values()))
+        self.lang_var.set(lang_opts[self.lang])
+
+        self._ui['auth_by'].configure(text=self.tr('auth_by') + ' ')
+        self._ui['auth_dev'].configure(text=self.tr('auth_dev'))
+        self._ui['auth_channel'].configure(text=self.tr('auth_channel'))
+
+        if self._status_key:
+            self.status.set(self.tr(self._status_key, **self._status_kwargs))
+
     def _on_language_changed(self, _event=None):
-        self.lang = label_to_lang_code(self.lang_var.get())
+        prev_lang = self.lang
+        self.lang = label_to_lang_code(self.lang_var.get(), prev_lang)
         self._apply_language()
 
     def _load_settings(self):
@@ -292,7 +362,11 @@ class TPTransasApp(tk.Tk):
         self.catalogue.set(cfg.get('catalogue_path') or d.get('catalogue_path', ''))
         self.output_dir.set(cfg.get('output_dir') or d.get('output_dir', ''))
         self.lang = resolve_language(cfg)
-        self.lang_var.set(lang_code_to_label(self.lang))
+        self.lang_var.set(lang_code_to_label(self.lang, self.lang))
+        fmt = normalize_chart_format(cfg.get('chart_format', CHART_TRANSAS))
+        if fmt not in CHART_FORMATS:
+            fmt = CHART_TRANSAS
+        self.chart_format_var.set(chart_code_to_label(fmt, self.lang))
 
     def persist_settings(self):
         adc = self.adc_dir.get().strip()
@@ -301,7 +375,8 @@ class TPTransasApp(tk.Tk):
         if not out:
             out = os.path.join(get_app_dir(), OUTPUT_DIR_NAME)
         os.makedirs(out, exist_ok=True)
-        self.lang = label_to_lang_code(self.lang_var.get())
+        self.lang = label_to_lang_code(self.lang_var.get(), self.lang)
+        chart_fmt = label_to_chart_code(self.chart_format_var.get(), self.lang)
         cfg = load_config()
         cfg.pop('world_output_path', None)
         cfg.update({
@@ -310,13 +385,14 @@ class TPTransasApp(tk.Tk):
             'catalogue_path': cat,
             'output_dir': os.path.abspath(out),
             'ui_language': self.lang,
+            'chart_format': chart_fmt,
         })
         save_config(cfg)
 
     def save_settings(self):
         self.persist_settings()
         self._apply_language()
-        self.status.set(self.tr('msg_settings_saved'))
+        self.set_status('msg_settings_saved')
         messagebox.showinfo(
             self.tr('window_title'),
             self.tr('msg_settings_saved_path', path=os.path.join(get_app_dir(), 'config.json')),
@@ -373,7 +449,7 @@ class TPTransasApp(tk.Tk):
             while True:
                 item = self._log_queue.get_nowait()
                 if item is None:
-                    return
+                    continue
                 if isinstance(item, tuple):
                     kind, payload = item[0], item[1]
                     if kind == 'world_done':
@@ -384,6 +460,16 @@ class TPTransasApp(tk.Tk):
             pass
         self.after(150, self._poll_log)
 
+    def _world_build_done(self, result):
+        self._world_building = False
+        self._world_worker = None
+        self._on_world_success(result)
+
+    def _world_build_failed(self, err):
+        self._world_building = False
+        self._world_worker = None
+        self._on_world_error(str(err))
+
     def launch_adc(self):
         self.persist_settings()
         adc = find_adc_exe()
@@ -392,7 +478,7 @@ class TPTransasApp(tk.Tk):
             return
         self._ensure_watcher_running()
         subprocess.Popen([adc])
-        self.status.set(self.tr('status_adc_started'))
+        self.set_status('status_adc_started')
 
     def build_route_manual(self):
         cat = self._validate_catalogue()
@@ -404,17 +490,50 @@ class TPTransasApp(tk.Tk):
         )
         if not path:
             return
-        self.status.set(self.tr('status_build_route'))
+        self.set_status('status_build_route')
         try:
             result = generate_from_export(path)
             self._on_route_built(result)
         except Exception as exc:
-            messagebox.showerror(self.tr('window_title'), str(exc))
+            self.show_error(exc)
+
+    def _show_furuno_result(self, result):
+        files = result.get('furuno_files', 0)
+        if not files:
+            return
+        folder = result.get('furuno_output_dir') or result.get('output', '')
+        messagebox.showinfo(
+            self.tr('window_title'),
+            self.tr(
+                'info_furuno_split',
+                files=files,
+                points=result.get('furuno_points', 0),
+                folder=folder,
+            ),
+        )
+        skipped = result.get('furuno_skipped', 0)
+        if skipped:
+            messagebox.showwarning(
+                self.tr('window_title'),
+                self.tr(
+                    'warn_furuno_skipped',
+                    skipped=skipped,
+                    limit=result.get('furuno_limit', 200),
+                ),
+            )
 
     def _on_route_built(self, result):
         out = result.get('output')
-        self.status.set(self.tr('status_route_updated', count=result.get('objects', 0)))
-        if out and os.path.isfile(out):
+        if result.get('furuno_files'):
+            self.set_status(
+                'status_furuno_ready',
+                files=result.get('furuno_files', 1),
+                count=result.get('objects', 0),
+            )
+            self._show_furuno_result(result)
+        else:
+            self.set_status('status_route_updated', count=result.get('objects', 0))
+        if out and (os.path.isfile(out) or os.path.isdir(out)):
             reveal_in_explorer(out)
         elif out:
             reveal_in_explorer(os.path.dirname(os.path.abspath(out)))
@@ -430,60 +549,67 @@ class TPTransasApp(tk.Tk):
         if not path:
             return
         self.persist_settings()
-        self.status.set(self.tr('status_extracting'))
+        self.set_status('status_extracting')
         try:
             result = build_notice_list(path, lang=self.lang)
         except Exception as exc:
-            self.status.set('')
-            messagebox.showerror(self.tr('window_title'), str(exc))
+            self.set_status()
+            self.show_error(exc)
             return
         count = result.get('count', 0)
         out = result.get('output')
         if count == 0:
-            self.status.set(self.tr('warn_no_notices'))
+            self.set_status('warn_no_notices')
             messagebox.showwarning(self.tr('window_title'), self.tr('warn_no_notices_pattern'))
             return
-        self.status.set(self.tr('status_list_saved', count=count))
+        self.set_status('status_list_saved', count=count)
         if out and os.path.isfile(out):
             reveal_in_explorer(out)
 
     def start_world_build(self):
-        if self._world_worker and self._world_worker.is_alive():
+        if self._world_building or (self._world_worker and self._world_worker.is_alive()):
             return
         cat = self._validate_catalogue()
         if not cat:
             return
         self.persist_settings()
-        out = world_aiz_path()
+        out = world_output_path()
 
+        self._world_building = True
         self.btn_world_build.configure(state='disabled')
-        self.status.set(self.tr('status_build_world'))
+        self.set_status('status_build_world')
 
         def worker():
             try:
-                result = build_world_aiz(cat, out)
-                self._log_queue.put(('world_done', result))
+                result = build_world_chart(cat, out)
+                self.after(0, lambda r=result: self._world_build_done(r))
             except Exception as exc:
-                self._log_queue.put(('world_err', str(exc)))
-            finally:
-                self._log_queue.put(None)
+                self.after(0, lambda e=exc: self._world_build_failed(e))
 
         self._world_worker = threading.Thread(target=worker, daemon=True)
         self._world_worker.start()
 
     def _on_world_success(self, result):
         self.btn_world_build.configure(state='normal')
-        self.status.set(self.tr('status_world_ready', count=result.get('objects', 0)))
+        if result.get('furuno_files'):
+            self.set_status(
+                'status_furuno_world',
+                files=result.get('furuno_files', 1),
+                count=result.get('objects', 0),
+            )
+            self._show_furuno_result(result)
+        else:
+            self.set_status('status_world_ready', count=result.get('objects', 0))
         out = result.get('output')
-        if out and os.path.isfile(out):
+        if out and (os.path.isfile(out) or os.path.isdir(out)):
             reveal_in_explorer(out)
         elif out:
             reveal_in_explorer(os.path.dirname(os.path.abspath(out)))
 
     def _on_world_error(self, err):
         self.btn_world_build.configure(state='normal')
-        self.status.set(self.tr('status_build_error'))
-        messagebox.showerror(self.tr('window_title'), err)
+        self.set_status('status_build_error')
+        self.show_error(err)
 
     def _on_close(self):
         if self._watcher.running:

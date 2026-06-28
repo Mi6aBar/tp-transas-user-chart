@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Сборка TP_Transas.exe в папку T&P_Program (только exe + README)."""
+"""Сборка TP_Chart_Master.exe в папку T&P_Program_v1.1 (только exe + README)."""
 import os
 import shutil
 import subprocess
@@ -9,13 +9,19 @@ SRC_ROOT = os.path.dirname(os.path.abspath(__file__))
 PAYLOAD = os.path.join(SRC_ROOT, 'payload')
 BUILD = os.path.join(SRC_ROOT, 'build')
 DIST = os.path.join(SRC_ROOT, 'dist')
-RELEASE = os.path.join(os.path.dirname(SRC_ROOT), 'T&P_Program')
-OUT_EXE = os.path.join(RELEASE, 'TP_Transas.exe')
+RELEASE = os.path.join(os.path.dirname(SRC_ROOT), 'T&P_Program_v1.1')
+OUT_EXE = os.path.join(RELEASE, 'TP_Chart_Master.exe')
 ICON = os.path.join(SRC_ROOT, 'TP_Transas.ico')
 ICON_PNG = os.path.join(SRC_ROOT, 'app_icon.png')
 
-SRC_WORLD = os.path.join(os.path.dirname(SRC_ROOT), 't&p world project', 'generate_world_tpnm_aiz.py')
 SRC_PARSE = os.path.join(os.path.dirname(SRC_ROOT), 'ADC_TPNM_Installer', 'payload', 'parse_adc_export.py')
+
+
+def sync_payload():
+    """v1.1: исходники в payload/; извне подтягиваем только parse_adc_export."""
+    os.makedirs(PAYLOAD, exist_ok=True)
+    if os.path.isfile(SRC_PARSE):
+        shutil.copy2(SRC_PARSE, os.path.join(PAYLOAD, 'parse_adc_export.py'))
 
 
 def make_icon():
@@ -43,15 +49,9 @@ def make_icon():
     print('Icon:', ICON, '(%d sizes, rounded)' % len(sizes))
 
 
-def sync_payload():
-    os.makedirs(PAYLOAD, exist_ok=True)
-    shutil.copy2(SRC_WORLD, os.path.join(PAYLOAD, 'generate_world_tpnm_aiz.py'))
-    shutil.copy2(SRC_PARSE, os.path.join(PAYLOAD, 'parse_adc_export.py'))
-
-
 def clean_release_dir():
     os.makedirs(RELEASE, exist_ok=True)
-    keep = {'TP_Transas.exe', 'README.txt'}
+    keep = {'TP_Chart_Master.exe', 'README.txt'}
     for name in os.listdir(RELEASE):
         if name not in keep:
             path = os.path.join(RELEASE, name)
@@ -73,7 +73,7 @@ def main():
         sys.executable, '-m', 'PyInstaller',
         '--noconfirm', '--clean',
         '--onefile', '--noconsole',
-        '--name', 'TP_Transas',
+        '--name', 'TP_Chart_Master',
         f'--paths={PAYLOAD}',
         f'--distpath={DIST}',
         f'--workpath={os.path.join(BUILD, "work")}',
@@ -84,6 +84,7 @@ def main():
         '--hidden-import', 'parse_adc_export',
         '--hidden-import', 'route_watcher',
         '--hidden-import', 'extract_notice_list',
+        '--hidden-import', 'export_tp_charts',
         '--hidden-import', 'i18n',
         '--hidden-import', 'pypdf',
         '--hidden-import', 'watchdog',
@@ -99,7 +100,7 @@ def main():
     print('>>', ' '.join(cmd))
     subprocess.check_call(cmd, cwd=SRC_ROOT)
 
-    built = os.path.join(DIST, 'TP_Transas.exe')
+    built = os.path.join(DIST, 'TP_Chart_Master.exe')
     if not os.path.isfile(built):
         raise SystemExit('Build failed')
 
